@@ -53,6 +53,7 @@ printf_null(const char *format, ...)
 
 
 #define XQC_PACKET_TMP_BUF_LEN 1500
+//将下列缓冲区的最大长度修改为2GB 
 #define MAX_BUF_SIZE (100*1024*1024)
 
 #define XQC_MAX_TOKEN_LEN 256
