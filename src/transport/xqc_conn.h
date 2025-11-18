@@ -37,7 +37,9 @@
 /* maximum accumulated number of xqc_engine_packet_process */
 #define XQC_MAX_PACKET_PROCESS_BATCH 100
 
-#define XQC_MAX_RECV_WINDOW (16 * 1024 * 1024)
+//修改一卡这里，改成1GB 
+#define XQC_MAX_RECV_WINDOW (1ULL * 1024 * 1024 * 1024)
+//#define XQC_MAX_RECV_WINDOW (16 * 1024 * 1024)
 
 #define XQC_MP_SETTINGS_STR_LEN (30)
 
