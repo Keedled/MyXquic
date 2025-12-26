@@ -1,0 +1,35 @@
+========== XQUIC multi-process benchmark ==========
+Clients      : 6
+Server       : 127.0.0.1:8443
+Send size    : 104857600 bytes per client
+Log dir      : ./logs_20251226_003002
+Cmd template : ../build/tests/test_client -a 127.0.0.1 -p 8443 -s 104857600 -l e -t 5 -E --qlog_disable
+===================================================
+Starting client 1, log -> ./logs_20251226_003002/client_1.log
+Starting client 2, log -> ./logs_20251226_003002/client_2.log
+Starting client 3, log -> ./logs_20251226_003002/client_3.log
+Starting client 4, log -> ./logs_20251226_003002/client_4.log
+Starting client 5, log -> ./logs_20251226_003002/client_5.log
+Starting client 6, log -> ./logs_20251226_003002/client_6.log
+
+========== Parsing client logs ==========
+OK  : client_1.log: size=104857600B, time=4.693572s, throughput≈178.725 Mbit/s
+OK  : client_2.log: size=104857600B, time=4.596392s, throughput≈182.504 Mbit/s
+OK  : client_3.log: size=104857600B, time=4.675571s, throughput≈179.414 Mbit/s
+OK  : client_4.log: size=104857600B, time=4.538045s, throughput≈184.851 Mbit/s
+OK  : client_5.log: size=104857600B, time=3.599079s, throughput≈233.077 Mbit/s
+OK  : client_6.log: size=104857600B, time=3.713808s, throughput≈225.876 Mbit/s
+
+================= Summary =================
+Clients launched            : 6
+Success connections         : 6
+Failed connections          : 0
+Total data sent (requests)  : 629145600 bytes
+
+Max request_time (req-win)  : 4.693572 seconds
+Total throughput (req-win)  : 1072.353 Mbit/s   # << 你主要关心这个
+
+Process wall time           : 10.106648 seconds
+Sum of per-conn speeds      : 1196.288 Mbit/s      # test_result_speed 之和，仅参考
+Log directory               : ./logs_20251226_003002
+===========================================

@@ -65,7 +65,11 @@ typedef struct user_datagram_block_s {
     size_t         data_lost;
     size_t         dgram_lost;
 } user_dgram_blk_t;
+/*
+- 做 datagram benchmark / echo 时，用来记录 datagram 内容和统计信息  
+- `xqc_server_conn_create_notify` 中，如果 `g_send_dgram` 打开，会分配 `data` 缓冲区，并设置 `to_send_size`。:contentReference[oaicite:10]{index=10}  
 
+*/
 
 typedef struct xqc_quic_lb_ctx_s {
     uint8_t    sid_len;
@@ -77,7 +81,7 @@ typedef struct xqc_quic_lb_ctx_s {
     int        lb_cid_enc_on;
 } xqc_quic_lb_ctx_t;
 
-
+//流级对象 `user_stream_t`
 typedef struct user_stream_s {
     xqc_stream_t            *stream;
     xqc_h3_request_t        *h3_request;
@@ -98,31 +102,39 @@ typedef struct user_stream_s {
     int                      rcv_times;
     struct event            *ev_timeout;
 } user_stream_t;
-
+/*
+- 每条 QUIC Stream（或者一个 H3 Request）对应一个 `user_stream_t`  
+- 负责：  
+  - `recv_body`：把客户端发来的数据收在这里（做 echo 时用）  
+  - `send_body`：要发回去的响应 body  
+  - `send_offset`：已经发出去多少 
+  */
 typedef struct user_conn_s {
     struct event        *ev_timeout;
     struct sockaddr_in6  peer_addr;
     socklen_t            peer_addrlen;
     xqc_cid_t            cid;
 
-    user_dgram_blk_t   *dgram_blk;
+    user_dgram_blk_t   *dgram_blk;// datagram 的数据块
     size_t              dgram_mss;
     uint8_t             dgram_not_supported;
 
     xqc_connection_t   *quic_conn;
     xqc_h3_conn_t      *h3_conn;
 } user_conn_t;
+//- 每条 QUIC 连接对应一个 `user_conn_t`  
+//- 里面挂着 xquic 的 `xqc_connection_t`、`xqc_h3_conn_t` 和 datagram 状态
 
 typedef struct xqc_server_ctx_s {
-    int fd;
-    xqc_engine_t        *engine;
+    int fd;                     // UDP socket
+    xqc_engine_t        *engine;// xquic 引擎
     struct sockaddr_in6  local_addr;
     socklen_t            local_addrlen;
-    struct event        *ev_socket;
-    struct event        *ev_engine;
+    struct event        *ev_socket;// 监听 socket 的 event
+    struct event        *ev_engine;// 定时器 event，用来叫醒 engine
     int                  log_fd;
     int                  keylog_fd;
-    xqc_quic_lb_ctx_t    quic_lb_ctx;
+    xqc_quic_lb_ctx_t    quic_lb_ctx;// QUIC-LB 相关
 } xqc_server_ctx_t;
 
 typedef struct {
@@ -726,7 +738,7 @@ xqc_server_conn_update_cid_notify(xqc_connection_t *conn, const xqc_cid_t *retir
 
 }
 
-
+//3.2 发数据：`xqc_server_stream_send`
 int
 xqc_server_stream_send(xqc_stream_t *stream, void *user_data)
 {
@@ -843,7 +855,8 @@ xqc_server_stream_write_notify(xqc_stream_t *stream, void *user_data)
     int ret = xqc_server_stream_send(stream, user_data);
     return ret;
 }
-
+//3.流（Stream）收发逻辑：你改的 MAX_BUF_SIZE 就在这里生效
+//3.1 收数据：`xqc_server_stream_read_notify`
 int
 xqc_server_stream_read_notify(xqc_stream_t *stream, void *user_data)
 {
@@ -1757,7 +1770,7 @@ xqc_server_refuse(xqc_engine_t *engine, xqc_connection_t *conn,
     free(user_conn);
     user_conn = NULL;
 }
-
+//创建 socket：`xqc_server_create_socket`
 static int
 xqc_server_create_socket(const char *addr, unsigned int port)
 {
@@ -2120,30 +2133,32 @@ void usage(int argc, char *argv[]) {
 
 int main(int argc, char *argv[]) {
 
+    //signal(SIGINT, SIGTERM, stop)：按 Ctrl+C 或被 kill -TERM 时，调用 stop()，里面会停 event loop、销毁 engine、释放 CDF 内存然后退出。
+    
     signal(SIGINT, stop);
     signal(SIGTERM, stop);
-
-    g_send_body_size = 1024*1024;
-    g_send_body_size_defined = 0;
-    g_send_body_size_from_cdf = 0;
+    
+    g_send_body_size = 1024*1024;//默认每个 HTTP/3 流要发送的 body 大小。
+    g_send_body_size_defined = 0;// 是否由命令行 -s 明确指定
+    g_send_body_size_from_cdf = 0;// 是否从 CDF 文件抽样 body 大小
     cdf_list = NULL;
     cdf_list_size = 0;
-    g_save_body = 0;
-    g_read_body = 0;
-    g_spec_url = 0;
+    g_save_body = 0;// 是否把收到的 body 写文件（-w）
+    g_read_body = 0;// 是否从文件读发送 body（-r）
+    g_spec_url = 0; // 是否指定 URL（-u）
     g_ipv6 = 0;
     g_max_dgram_size = 0;
-    g_send_dgram = 0;
+    g_send_dgram = 0;//是否启用 QUIC datagram（0=关，1=单发，2=批量）。
     g_copa_ai = 1.0;
     g_copa_delta = 0.05;
-    g_enable_h3_ext = 1;
+    g_enable_h3_ext = 1;//是否启用 HTTP/3 扩展（h3 datagram）。
     g_dgram_qos_level = XQC_DATA_QOS_HIGH;
-    g_pmtud_on = 0;
+    g_pmtud_on = 0;// 路径 MTU 探测
 
-    char server_addr[64] = TEST_ADDR;
-    int server_port = TEST_PORT;
-    char c_cong_ctl = 'b';
-    char c_log_level = 'd';
+    char server_addr[64] = TEST_ADDR;// 默认 127.0.0.1
+    int server_port = TEST_PORT;// 默认 8443
+    char c_cong_ctl = 'b';  // 默认 bbr
+    char c_log_level = 'd'; // 默认 debug log
     int c_cong_plus = 0;
     uint8_t c_qlog_disable = 0;
     char c_qlog_importance = 'r';
@@ -2151,21 +2166,44 @@ int main(int argc, char *argv[]) {
     strncpy(g_log_path, "./slog", sizeof(g_log_path));
 
     //ensure the random sequence is the same for every test
-    srand(0);
-
+    srand(0);// 固定随机种子，方便重复实验
+    //这个变量后面会被用来区分到底是哪个 long option 被匹配到了。
     int long_opt_index;
 
-    const struct option long_opts[] = {
-        {"copa_delta", required_argument, &long_opt_index, 1},
-        {"copa_ai_unit", required_argument, &long_opt_index, 2},
-        {"dgram_qos", required_argument, &long_opt_index, 3},
-        {"pmtud", required_argument, &long_opt_index, 4},
-        {"qlog_disable", no_argument, &long_opt_index, 5},
-        {"qlog_importance", required_argument, &long_opt_index, 6},
-        {0, 0, 0, 0}
+    /*
+    struct option结构体：
+    struct option {
+        const char *name;  // 选项名字，比如 "copa_delta"
+        int         has_arg; // 要不要跟参数
+        int        *flag;    // 行为控制指针
+        int         val;     // 值
     };
+    */
 
+    const struct option long_opts[] = {
+        {"copa_delta", required_argument, &long_opt_index, 1},//--copa_delta COPA,拥塞控制算法里面的一个参数，后面在 conn_settings.cc_params 里用到。
+        {"copa_ai_unit", required_argument, &long_opt_index, 2},//--copa_ai_unit,同样是 COPA 拥塞控制相关的参数，后面也被塞进 conn_settings.cc_params.copa_delta_ai_unit。
+        {"dgram_qos", required_argument, &long_opt_index, 3},//--dgram_qos,设置 QUIC Datagram 的 QoS 等级，后面发 datagram 的时候会用这个全局变量决定优先级。
+        {"pmtud", required_argument, &long_opt_index, 4},//--pmtud,通过这个 long option 来启用/控制 Path MTU Discovery。
+        {"qlog_disable", no_argument, &long_opt_index, 5},//--qlog_disable,关掉 qlog 事件记录，减少日志输出和开销。
+        {"qlog_importance", required_argument, &long_opt_index, 6},//qlog_importance,控制 qlog 记录哪些等级的事件，多一点还是少一点。
+        {0, 0, 0, 0}//最后一项 {0,0,0,0} 是结束标记，告诉 getopt_long 这个数组到此结束。
+    };
+    /*
+        （3）第三列：flag 指针，这里是 &long_opt_index
+        这是很多人最迷的地方 😆
+        规则是这样的（GNU getopt_long 的行为）：
+            如果 flag == NULL，那 getopt_long 会直接返回 val。
+            如果 flag != NULL，那 getopt_long 会：
+                把 *flag = va
+                自己返回值 0
+        这里的 flag 全都是 &long_opt_index，所以：
+            每遇到一个 long option，getopt_long 会把：
+                long_opt_index = val（就是你第四列的 1/2/3/4/5/6）
+                并且函数返回值 ch = 0
+    */
     int ch = 0;
+    //getopt_long 每调用一次，会解析一个命令行选项（比如 -a、-p、-e、--copa_delta 之类）。当所有选项解析完了，它会返回 -1。
     while ((ch = getopt_long(argc, argv, "a:p:efc:Cs:w:r:l:u:x:6bS:MR:o:EK:mLQ:U:yH", long_opts, NULL)) != -1) {
         switch (ch) {
         case 'H':
@@ -2309,7 +2347,7 @@ int main(int argc, char *argv[]) {
             switch (long_opt_index)
             {
             case 1: /* copa_delta */
-                g_copa_delta = atof(optarg);
+                g_copa_delta = atof(optarg);//COPA 拥塞控制算法里面的一个参数，后面在 conn_settings.cc_params 里用到。
                 if (g_copa_delta <= 0 || g_copa_delta > 0.5) {
                     printf("option g_copa_delta must be in (0, 0.5]\n");
                     exit(0);
@@ -2367,16 +2405,31 @@ int main(int argc, char *argv[]) {
             exit(0);
         }
     }
-
+    /*
+        ctx 是服务器的全局上下文（xqc_server_ctx_t），里面会放：
+            engine 指针
+            libevent 的 event_base、ev_socket、ev_engine
+            QUIC-LB 相关信息
+            日志 / keylog 文件句柄等
+            先 memset 清零，避免有脏数据。
+    */
     memset(&ctx, 0, sizeof(ctx));
 
     char g_session_ticket_file[] = "session_ticket.key";
-
+    /*
+        xqc_server_open_keylog_file、xqc_server_open_log_file：
+            打开 TLS keylog 文件 + 一般 log 文件，把 FD 塞到 ctx 里。
+    */
     xqc_server_open_keylog_file(&ctx);
     xqc_server_open_log_file(&ctx);
-
+    //做平台相关初始化（Linux 基本是空实现，Windows 会 WSAStartup 之类）。
     xqc_platform_init_env();
-
+    /*
+        告诉 xquic：
+        私钥：server.key
+        证书：server.crt
+        使用哪些 TLS cipher / 椭圆曲线组。
+    */
     xqc_engine_ssl_config_t  engine_ssl_config;
     memset(&engine_ssl_config, 0, sizeof(engine_ssl_config));
     engine_ssl_config.private_key_file = "./server.key";
@@ -2386,7 +2439,8 @@ int main(int argc, char *argv[]) {
 
     char g_session_ticket_key[2048];
     int ticket_key_len  = read_file_data(g_session_ticket_key, sizeof(g_session_ticket_key), g_session_ticket_file);
-
+    //如果有 session_ticket.key 文件，就加载，支持 TLS session ticket，后续可以 0-RTT/1-RTT 复用；
+    //如果没有，就关掉 session ticket 支持（两个字段置空）。
     if (ticket_key_len < 0) {
         engine_ssl_config.session_ticket_key_data = NULL;
         engine_ssl_config.session_ticket_key_len = 0;
@@ -2395,7 +2449,13 @@ int main(int argc, char *argv[]) {
         engine_ssl_config.session_ticket_key_data = g_session_ticket_key;
         engine_ssl_config.session_ticket_key_len = ticket_key_len;
     }
-
+    //engine 回调（定时器/日志/keylog）
+    //set_event_timer：
+        //→ engine 想在 X 毫秒后被叫醒，就调这个函数；实现里会用 libevent 注册一个定时器 event。
+    //log_callbacks：
+        //→ engine 内部要写 error log / stat log / qlog 时，走这些回调函数；里面再把内容写到 ctx 打开的日志文件里。
+    //keylog_cb：
+        //→ 把 TLS 秘钥写进 keylog 文件（给 Wireshark 解密用）。
     xqc_engine_callback_t callback = {
         .set_event_timer = xqc_server_set_event_timer,
         .log_callbacks = {
@@ -2408,10 +2468,14 @@ int main(int argc, char *argv[]) {
     };
 
     xqc_transport_callbacks_t tcbs = {
+        //server_accept / server_refuse：有新连接尝试建立时调用，一般在 server_accept 里创建 user_conn_t，绑定到这条连接。
         .server_accept = xqc_server_accept,
         .server_refuse = xqc_server_refuse,
+        //write_socket / write_socket_ex：engine 准备好的 UDP 数据包，需要“真正发到网络上”，就调这里。
         .write_socket = xqc_server_write_socket,
         .write_socket_ex = xqc_server_write_socket_ex,
+        //conn_update_cid_notify、stateless_reset、peer_addr_changed、path_removed 等：
+        //      QUIC 连接 ID 更新、无状态重置、对端地址变更、多路径 path 下线，通知你做一些记录或自定义操作。
         .conn_update_cid_notify = xqc_server_conn_update_cid_notify,
         .stateless_reset = xqc_server_stateless_reset,
         .conn_peer_addr_changed_notify = xqc_server_conn_peer_addr_changed_notify,
@@ -2421,7 +2485,8 @@ int main(int argc, char *argv[]) {
         .conn_retry_packet_condition_check = xqc_retry_packet_check,
         .conn_send_packet_before_accept = xqc_server_write_socket, 
     };
-
+//选择拥塞控制算法 + 基本 conn_settings
+//拥塞控制选择
     xqc_cong_ctrl_callback_t cong_ctrl;
     uint32_t cong_flags = 0;
     if (c_cong_ctl == 'b') {
@@ -2469,7 +2534,24 @@ int main(int argc, char *argv[]) {
         return -1;
     }
     printf("congestion control flags: %x\n", cong_flags);
-
+    /*
+    c_cong_ctl 来自命令行的 -c：
+        'b' → BBR
+        'r' → Reno
+        'c' → Cubic
+        'B' → BBR2
+        'P' → COPA
+    */
+    //构造 xqc_conn_settings_t conn_settings
+    /*
+        这就是“每条 QUIC 连接的行为参数”：
+            是否打开 pacing（按时间平滑发包）；
+            用哪种拥塞控制 + 初始拥塞窗口、优化 flag、COPA 参数；
+            是否开启 multipath；
+            是否启用 FEC 编/解码；
+            datagram 最大帧大小；   
+            一些 datagram 冗余、重传策略等。
+    */
     xqc_conn_settings_t conn_settings = {
         .pacing_on  =   pacing_on,
         .cong_ctrl_callback = cong_ctrl,
@@ -2485,7 +2567,7 @@ int main(int argc, char *argv[]) {
         .enable_encode_fec = g_enable_fec,
         .enable_decode_fec = g_enable_fec,
         .spurious_loss_detect_on = 0,
-        .max_datagram_frame_size = g_max_dgram_size,
+        .max_datagram_frame_size = g_max_dgram_size,//如果不管他的话，默认值为0，相当于不设限制。
         // .datagram_force_retrans_on = 1,
         .marking_reinjection = 1,
         .close_dgram_redundancy = XQC_RED_NOT_USE,
@@ -2599,11 +2681,16 @@ int main(int argc, char *argv[]) {
         conn_settings.receive_timestamps_exponent = 0;
     }
 
+    //4. engine 全局配置 config + libevent 事件基础
+    //获取默认 config 并修改
+    //config 是引擎级别的全局配置（和 conn_settings 不同，一个是“全局”，一个是“连接级”）。
+    //enable_h3_ext：是否启用 HTTP/3 扩展（datagram/bytestream）。
     xqc_config_t config;
     if (xqc_engine_get_default_config(&config, XQC_ENGINE_SERVER) < 0) {
         return -1;
     }
-
+    //config 是引擎级别的全局配置（和 conn_settings 不同，一个是“全局”，一个是“连接级”）。
+    //enable_h3_ext：是否启用 HTTP/3 扩展（datagram/bytestream）。
     config.enable_h3_ext = g_enable_h3_ext;
 
     switch(c_log_level) {
@@ -2614,7 +2701,7 @@ int main(int argc, char *argv[]) {
         case 'd': config.cfg_log_level = XQC_LOG_DEBUG; break;
         default: config.cfg_log_level = XQC_LOG_DEBUG;
     }
-
+    //日志事件开关 + qlog 重要性：
     if (c_qlog_disable) {
         config.cfg_log_event = 0;
     }
@@ -2626,9 +2713,18 @@ int main(int argc, char *argv[]) {
         case 'r': config.cfg_qlog_importance = EVENT_IMPORTANCE_REMOVED; break;
         default: config.cfg_qlog_importance = EVENT_IMPORTANCE_EXTRA;
     }
-
+    //创建 libevent 的 event_base 和 engine 的定时器事件
     eb = event_base_new();
     ctx.ev_engine = event_new(eb, -1, 0, xqc_server_engine_callback, &ctx);
+    //eb：整个 event loop 的核心对象；
+    //ctx.ev_engine：一个“虚拟 event”，不是绑 fd 的，是配合 set_event_timer 用的：
+    //引擎要在未来 X 毫秒后执行某个定时任务（比如超时重传），就让 xqc_server_set_event_timer 在 eb 上安排这个 ev_engine 的触发时间，
+    //触发时回调 xqc_server_engine_callback，里面再调 xqc_engine_main_logic 之类的东西。
+
+    //批量发送 sendmmsg 支持
+    //如果编译环境支持 sendmmsg，且命令行开了 -b：
+    //设置 tcbs.write_mmsg / write_mmsg_ex，启用批量发送接口；
+    //config.sendmmsg_on = 1 告诉引擎可以用批量发送优化。
 
 #if defined(XQC_SUPPORT_SENDMMSG) && !defined(XQC_SYS_WINDOWS)
     if (g_batch) {
@@ -2639,6 +2735,12 @@ int main(int argc, char *argv[]) {
 #endif
 
     /* test server cid negotiate */
+    //CID 协商 & LB CID key
+
+    //某些测试用例或你设置了 server sid 时（-S）：
+        // 如果没提供 LB CID key，就随机生成一份；
+        // 注册 cid_generate_cb，让 server 自己生成 CID；
+        // 开启 CID 协商、设定 CID 长度，用于 QUIC-LB 和多 server 部署。
     if (g_test_case == 1 || g_test_case == 5 || g_test_case == 6 || g_sid_len != 0) {
 
         if (g_lb_cid_enc_key_len == 0) {
@@ -2653,7 +2755,7 @@ int main(int argc, char *argv[]) {
         config.cid_negotiate = 1;
         config.cid_len = XQC_MAX_CID_LEN;
     }
-
+    //创建 engine 并应用连接设置
     ctx.engine = xqc_engine_create(XQC_ENGINE_SERVER, &config, &engine_ssl_config,
                                    &callback, &tcbs, &ctx);
     if (ctx.engine == NULL) {
@@ -2662,8 +2764,23 @@ int main(int argc, char *argv[]) {
     }
 
     xqc_server_set_conn_settings(ctx.engine, &conn_settings);
+    /*
+    到这里为止：
+    引擎知道：
+        配置 config
+        TLS 配置 engine_ssl_config
+        engine 回调 callback
+        传输回调 tcbs
+        user_data = &ctx
+    然后把之前构造的 conn_settings 也绑定进 engine，让新建连接都按这套参数跑。
+    */
+    /* register http3 callbacks 
+       h3_conn_xxx：HTTP/3 连接层事件；
+        h3_request_xxx：HTTP/3 request（H3 stream）读写、创建、关闭事件；
+        h3_ext_dgram_cbs：H3 datagram 扩展的读写/ACK/丢包通知；
+        h3_ext_bs_cbs：H3 bytestream 扩展。
+    */
 
-    /* register http3 callbacks */
     xqc_h3_callbacks_t h3_cbs = {
         .h3c_cbs = {
             .h3_conn_create_notify = xqc_server_h3_conn_create_notify,
@@ -2691,7 +2808,10 @@ int main(int argc, char *argv[]) {
         },
     };
 
-    /* register transport callbacks */
+    /* register transport callbacks 
+        这套是针对 ALPN XQC_ALPN_TRANSPORT（纯 QUIC）的 conn / stream / datagram 回调；
+        类似 H3，只是协议语义由你自己定义。
+    */
     xqc_app_proto_callbacks_t ap_cbs = {
         .conn_cbs = {
             .conn_create_notify = xqc_server_conn_create_notify,
@@ -2715,11 +2835,14 @@ int main(int argc, char *argv[]) {
 
 
     /* test NULL stream callback */
+    //特殊测试（g_test_case == 2）时，还会把 stream 回调清空，测试 “NULL stream callback” 行为：
     if (g_test_case == 2) {
         memset(&ap_cbs.stream_cbs, 0, sizeof(ap_cbs.stream_cbs));
     }
 
     /* init http3 context */
+    //初始化 H3 context
+    //把 h3_cbs 注册到 HTTP/3 模块里。后面还会根据 g_test_case 改一些 QPACK / field section size 的设置。
     xqc_int_t ret = xqc_h3_ctx_init(ctx.engine, &h3_cbs);
     if (ret != XQC_OK) {
         printf("init h3 context error, ret: %d\n", ret);
@@ -2745,21 +2868,41 @@ int main(int argc, char *argv[]) {
         xqc_h3_engine_set_qpack_compat_duplicate(ctx.engine, 1);
 #endif
     }
-
+//注册 transport ALPN：
     xqc_engine_register_alpn(ctx.engine, XQC_ALPN_TRANSPORT, 9, &ap_cbs, NULL);
 
     if (g_test_case == 10) {
         xqc_h3_engine_set_max_field_section_size(ctx.engine, 10000000);
     }
+    //7. QUIC-LB context 填充 + 创建 UDP socket + 事件循环
 
     /* for lb cid generate */
+    //把 server id / cid key / 是否加密 等信息放进 ctx.quic_lb_ctx，给 xqc_server_cid_generate 使用，用来生成符合 QUIC-LB 标准的 CID。
     memcpy(ctx.quic_lb_ctx.sid_buf, g_sid, g_sid_len);
     memcpy(ctx.quic_lb_ctx.lb_cid_key, g_lb_cid_enc_key, XQC_LB_CID_KEY_LEN);
     ctx.quic_lb_ctx.lb_cid_enc_on = g_lb_cid_encryption_on;
     ctx.quic_lb_ctx.sid_len = g_sid_len;
     ctx.quic_lb_ctx.conf_id = 0;
     ctx.quic_lb_ctx.cid_len = XQC_MAX_CID_LEN;
+    
 
+    //创建 UDP socket，注册到 libevent
+    /*
+    xqc_server_create_socket：
+            创建一个 UDP socket；
+            bind 到 server_addr:server_port；
+            设置为非阻塞、调大缓冲等。
+        event_new(... EV_READ | EV_PERSIST ...)：
+            当 socket 上有数据可读（收到 UDP 包）时，回调 xqc_server_socket_event_callback；
+            EV_PERSIST 表示这个事件一直有效，不用每次手动重新 event_add。
+        event_base_dispatch(eb)：
+            进入 libevent 的事件循环；
+            之后就靠：
+                socket 可读事件；
+                engine 定时器事件；
+                信号（Ctrl+C 调 stop 再 event_base_loopbreak）
+            来驱动整个 QUIC/H3 的运行。
+    */
     ctx.fd = xqc_server_create_socket(server_addr, server_port);
     if (ctx.fd < 0) {
         printf("xqc_create_socket error\n");
@@ -2772,11 +2915,17 @@ int main(int argc, char *argv[]) {
     last_snd_ts = 0;
     event_base_dispatch(eb);
 
+    /*事件循环退出之后：
+        销毁 H3 context；
+        销毁 QUIC engine；
+        关闭日志文件、keylog 文件；
+        释放 CDF 分布数据；
+    */
     xqc_h3_ctx_destroy(ctx.engine);
     xqc_engine_destroy(ctx.engine);
     xqc_server_close_keylog_file(&ctx);
     xqc_server_close_log_file(&ctx);
     destroy_cdf();
-
+    
     return 0;
 }

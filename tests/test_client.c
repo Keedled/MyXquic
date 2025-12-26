@@ -2707,7 +2707,7 @@ xqc_client_request_send(xqc_h3_request_t *h3_request, user_stream_t *user_stream
         }
         ret = xqc_h3_request_send_body(h3_request, user_stream->send_body + user_stream->send_offset, user_stream->send_body_len - user_stream->send_offset, fin);
         if (ret == -XQC_EAGAIN) {
-            printf("xqc_h3_request_send_body eagain %zd\n", ret);
+            //printf("xqc_h3_request_send_body eagain %zd\n", ret);
             return 0;
 
         } else if (ret < 0) {
@@ -2798,7 +2798,7 @@ xqc_client_request_write_notify(xqc_h3_request_t *h3_request, void *user_data)
         return -1;
     }
 
-    printf("request write notify!:%"PRIu64"\n", xqc_h3_stream_id(h3_request));
+    //printf("request write notify!:%"PRIu64"\n", xqc_h3_stream_id(h3_request));
     ret = xqc_client_request_send(h3_request, user_stream);
     return ret;
 }
@@ -3638,7 +3638,7 @@ xqc_client_write_log(xqc_log_level_t lvl, const void *buf, size_t count, void *e
 
     client_ctx_t *ctx = (client_ctx_t*)engine_user_data;
     if (ctx->log_fd <= 0) {
-        printf("xqc_client_write_log fd err\n");
+        //printf("xqc_client_write_log fd err\n");
         return;
     }
 
@@ -3661,7 +3661,7 @@ xqc_client_write_qlog(qlog_event_importance_t imp, const void *buf, size_t count
 
     client_ctx_t *ctx = (client_ctx_t*)engine_user_data;
     if (ctx->log_fd <= 0) {
-        printf("xqc_client_write_qlog fd err\n");
+        //printf("xqc_client_write_qlog fd err\n");
         return;
     }
 
