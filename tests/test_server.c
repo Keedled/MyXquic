@@ -1616,7 +1616,8 @@ xqc_server_socket_read_handler(xqc_server_ctx_t *ctx)
 #ifdef __linux__
     int batch = 0; /* packets are not necessarily on the same connection */
     if (batch) {
-#define VLEN 100
+//这里也从100改成10
+#define VLEN 10
 #define BUFSIZE XQC_PACKET_TMP_BUF_LEN
 #define TIMEOUT 10
         struct sockaddr_in6 pa[VLEN];

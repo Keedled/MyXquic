@@ -22,7 +22,7 @@ SEND_SIZE=104857600                          # 每个连接发送的 body 大小
 #52428800  50MB
 #20971520  20MB
 #EXTRA_OPTS="-l e -t 5 -E --qlog_disable"                # 其它 test_client 参数
-EXTRA_OPTS="-l d -t 5 -E "                              # 调试模式
+EXTRA_OPTS="-l e -t 5 -E "                              # 调试模式
 #EXTRA_OPTS="-l e -t 5 -E"                # 其它 test_client 参数
 # ==================================
 

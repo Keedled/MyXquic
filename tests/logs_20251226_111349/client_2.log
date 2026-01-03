@@ -1,0 +1,46 @@
+option addr :127.0.0.1
+option port :8443
+option send_body_size :104857600
+option log level :d
+option g_conn_timeout :5
+option echo check :on
+read token size 37
+congestion control flags: 0
+conn type: 0
+/home/jiangxinkun3/xquic/tests/test_client.c:1824 (xqc_client_h3_conn_create_notify)
+xqc_h3_conn_is_ready_to_send_early_data:1
+[h3-dgram]|prepare_dgram_user_data|
+xqc_h3_request_send_headers success size=41
+save_tp_cb use server domain as the key. h3[0]
+/home/jiangxinkun3/xquic/tests/test_client.c:1882 (xqc_client_h3_conn_handshake_finished)
+0rtt_flag:2
+====>DCID:d27f3547879f0477
+====>SCID:34e94379f05e1e85
+save_session_cb use server domain as the key. h3[0]
+save_session_cb use server domain as the key. h3[0]
+/home/jiangxinkun3/xquic/tests/test_client.c:1929 (xqc_client_h3_conn_ping_acked_notify)
+====>no ping_id
+/home/jiangxinkun3/xquic/tests/test_client.c:1929 (xqc_client_h3_conn_ping_acked_notify)
+====>ping_id:1
+:method = POST
+:scheme = https
+:path = /path/resource
+:status = 200
+host = test.xquic.com
+content-type = text/plain
+[33m>>>>>>>> request time cost:84496403 us, speed:10027 Kbit/s 
+>>>>>>>> send_body_size:104857600, recv_body_size:1048576 [0m
+test_result_speed: 10027 Kbit/s. request_cnt: 1.
+retx:19884, sent:108852, max_pto:1
+[rr_benchmark]|request_time:84496403|request_size:104857600|response_size:1048576|
+/home/jiangxinkun3/xquic/tests/test_client.c:2981 (xqc_client_request_close_notify)
+send_body_size:104857600, recv_body_size:1048576, send_header_size:105, recv_header_size:92, recv_fin:1, err:0, mp_state:0, cellular_send_weight:0.00, cellular_recv_weight:0.00, stream_info:(1,0,0/0/0/a/0,104857648,1048591,155131,19884,2523)#0-108852-890-128334757-1048591-18346-2
+retx:19884, sent:108852, max_pto:1
+>>>>>>>> pass:0
+xqc_client_timeout_callback | conn_close
+conn closing: 0
+/home/jiangxinkun3/xquic/tests/test_client.c:1844 (xqc_client_h3_conn_close_notify)
+conn errno:256
+should_clear_0rtt_ticket, conn_err:256, clear_0rtt_ticket:0
+send_count:108878, lost_count:19890, tlp_count:2, recv_count:2290, srtt:18346 early_data_flag:2, conn_err:0, mp_state:0, ack_info:#2297-1458#0-0#0-0#v0429, alpn:h3, conn_info:0/0/0/a/0,1,1,1,0,0,0,0,0,13795,12946,108976,2290,2290,128334817,0,1048639,i32,4,24,33,40000,2297,90131,0,4,1207,1216,80,2295,84496,0,4,458,467,80,2296,84496,0,4,17,40000,110606,90127,4,21,4,110604,84479,4,21,4,110605,84498,0-2,0-2,0-0,0-0,0-0,0-18,0-132372140,0-1325564,0-108878,0-2290,0-19890,0-2,0-0,0-0,0-0,0-0,0-0,0-0
+[h3-dgram]|recv_dgram_bytes:0|sent_dgram_bytes:0|lost_dgram_bytes:0|lost_cnt:0|

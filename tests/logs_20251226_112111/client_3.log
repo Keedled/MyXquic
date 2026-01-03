@@ -1,0 +1,28 @@
+option addr :127.0.0.1
+option port :8443
+option send_body_size :104857600
+option log level :d
+option g_conn_timeout :5
+option echo check :on
+read token size 37
+congestion control flags: 0
+conn type: 0
+/home/jiangxinkun3/xquic/tests/test_client.c:1824 (xqc_client_h3_conn_create_notify)
+xqc_h3_conn_is_ready_to_send_early_data:1
+[h3-dgram]|prepare_dgram_user_data|
+xqc_h3_request_send_headers success size=41
+save_tp_cb use server domain as the key. h3[0]
+/home/jiangxinkun3/xquic/tests/test_client.c:1882 (xqc_client_h3_conn_handshake_finished)
+0rtt_flag:2
+====>DCID:b9a11d1e2a7b494a
+====>SCID:e69da92bc2b78f1b
+xqc_client_timeout_callback | conn_close
+/home/jiangxinkun3/xquic/tests/test_client.c:2981 (xqc_client_request_close_notify)
+send_body_size:21214908, recv_body_size:0, send_header_size:105, recv_header_size:0, recv_fin:0, err:0, mp_state:0, cellular_send_weight:0.00, cellular_recv_weight:0.00, stream_info:(1,0,0/0/0/a/0,21214956,0,0,0,2338)#0-64-0-73981-0-250000-2
+retx:0, sent:64, max_pto:4
+>>>>>>>> pass:0
+/home/jiangxinkun3/xquic/tests/test_client.c:1844 (xqc_client_h3_conn_close_notify)
+conn errno:256
+should_clear_0rtt_ticket, conn_err:256, clear_0rtt_ticket:0
+send_count:86, lost_count:0, tlp_count:7, recv_count:42, srtt:0 early_data_flag:2, conn_err:0, mp_state:0, ack_info:#2-0#0-0#0-0#v0429, alpn:h3, conn_info:0/0/0/a/0,1,1,1,0,0,0,0,0,16,15,93,42,42,74017,0,18,i32,2,184,209,0,189,11456,-622,2,184,209,0,14889794,20608,-622,2,184,209,0,50502,20608,-622,2,68,20,13,13905,2,68,20,14,13905,2,33,40000,15,20017,0-2,0-2,0-0,0-0,0-0,0-250,0-83002,0-15709,0-86,0-42,0-0,0-7,0-0,0-0,0-0,0-0,0-0,0-0
+[h3-dgram]|recv_dgram_bytes:0|sent_dgram_bytes:0|lost_dgram_bytes:0|lost_cnt:0|

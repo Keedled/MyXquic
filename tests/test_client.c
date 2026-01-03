@@ -3091,7 +3091,8 @@ xqc_client_socket_read_handler(user_conn_t *user_conn, int fd)
 #ifdef __linux__
     int batch = 0;
     if (batch) {
-#define VLEN 100
+//这里暂时从100改成10        
+#define VLEN 10
 #define BUFSIZE XQC_PACKET_TMP_BUF_LEN
 #define TIMEOUT 10
         struct sockaddr_in6 pa[VLEN];

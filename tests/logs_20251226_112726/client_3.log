@@ -1,0 +1,19 @@
+option addr :127.0.0.1
+option port :8443
+option send_body_size :104857600
+option log level :e
+option g_conn_timeout :5
+option echo check :on
+read token size 37
+congestion control flags: 0
+conn type: 0
+/home/jiangxinkun3/xquic/tests/test_client.c:1824 (xqc_client_h3_conn_create_notify)
+xqc_h3_conn_is_ready_to_send_early_data:1
+xqc_client_write_socket_ex path:0 err -1 Connection refused 50
+[h3-dgram]|prepare_dgram_user_data|
+xqc_h3_request_create error
+/home/jiangxinkun3/xquic/tests/test_client.c:1844 (xqc_client_h3_conn_close_notify)
+conn errno:256
+should_clear_0rtt_ticket, conn_err:256, clear_0rtt_ticket:0
+send_count:1, lost_count:0, tlp_count:0, recv_count:0, srtt:0 early_data_flag:0, conn_err:0, mp_state:0, ack_info:#0-0#0-0#0-0#v0429, alpn:h3, conn_info:0/0/0/a/0,1,1,1,0,0,0,0,0,0,0,1,0,0,0,0,0,i32,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1184,21,0,0,0,0,0,0,0,0,0,0,0,0,0-2,0-2,0-1,0-0,0-0,0-250,0-1200,0-0,0-1,0-0,0-0,0-0,0-0,0-0,0-0,0-0,0-0,0-0
+[h3-dgram]|recv_dgram_bytes:0|sent_dgram_bytes:0|lost_dgram_bytes:0|lost_cnt:0|
