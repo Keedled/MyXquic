@@ -921,17 +921,20 @@ finish:
 void
 xqc_engine_main_logic(xqc_engine_t *engine)
 {
+    /* 防止 engine 主逻辑重入，避免重复调度导致状态混乱 */
     if (engine->eng_flag & XQC_ENG_FLAG_RUNNING) {
         xqc_log(engine->log, XQC_LOG_DEBUG, "|engine is running|");
         return;
     }
     engine->eng_flag |= XQC_ENG_FLAG_RUNNING;
 
+    /* 获取当前单调时间，后续用于连接调度和超时判断 */
     xqc_usec_t now = xqc_monotonic_timestamp();
     xqc_connection_t *conn;
 
     xqc_log(engine->log, XQC_LOG_DEBUG, "|BEGIN|now:%ui|", now);
 
+    /* 先扫描等待唤醒队列，把所有已到时间的连接移入活跃队列 */
     while (!xqc_pq_empty(engine->conns_wait_wakeup_pq)) {
         xqc_conns_pq_elem_t *el = xqc_conns_pq_top(engine->conns_wait_wakeup_pq);
         if (XQC_UNLIKELY(el == NULL || el->conn == NULL)) {
@@ -942,6 +945,7 @@ xqc_engine_main_logic(xqc_engine_t *engine)
         conn = el->conn;
 
         if (el->time_us <= now) {
+            /* 到达唤醒时间的连接从睡眠队列移除，并加入本轮活跃处理队列 */
             xqc_engine_remove_wakeup_queue(engine, conn);
             if (xqc_engine_add_active_queue(engine, conn) != XQC_OK) {
                 xqc_log(conn->log, XQC_LOG_ERROR, "|xqc_conns_pq_push error|");
@@ -949,10 +953,12 @@ xqc_engine_main_logic(xqc_engine_t *engine)
             }
 
         } else {
+            /* 等待队列按时间排序，堆顶尚未到期时，后续连接也无需继续检查 */
             break;
         }
     }
 
+    /* 逐个处理本轮活跃连接 */
     while (!xqc_pq_empty(engine->conns_active_pq)) {
         conn = xqc_conns_pq_pop_top_conn(engine->conns_active_pq);
 
@@ -962,31 +968,38 @@ xqc_engine_main_logic(xqc_engine_t *engine)
         }
 
         now = xqc_monotonic_timestamp();
+        /* 推进单连接状态机，处理超时、ACK、恢复等核心逻辑 */
         xqc_engine_process_conn(conn, now);
         
         if (XQC_LIKELY(conn->conn_state != XQC_CONN_STATE_CLOSED)) {
+            /* 连接仍然存活，记录本次 tick 时间并安排待发包到具体 path */
             conn->last_ticked_time = now;
             xqc_conn_schedule_packets_to_paths(conn);
 
             if (xqc_engine_is_sendmmsg_on(engine, conn)) {
+                /* 批量发送模式：发送 PTO 探测包、重传丢包、发送正常待发包 */
                 xqc_conn_transmit_pto_probe_packets_batch(conn);
                 xqc_conn_retransmit_lost_packets_batch(conn);
                 xqc_conn_send_packets_batch(conn);
 
             } else {
+                /* 普通发送模式：逐步完成 PTO 探测、丢包重传和正常发送 */
                 xqc_conn_transmit_pto_probe_packets(conn);
                 xqc_conn_retransmit_lost_packets(conn);
                 xqc_conn_send_packets(conn);
             }
 
             if (conn->conn_settings.mp_enable_reinjection & XQC_REINJ_UNACK_AFTER_SEND) {
+                /* 多路径场景下，可在发送后对未确认包执行 reinjection，再补发一次 */
                 xqc_conn_reinject_unack_packets(conn, XQC_REINJ_UNACK_AFTER_SEND);
                 xqc_conn_send_packets(conn);
             }
 
             if (XQC_LIKELY(conn->conn_state != XQC_CONN_STATE_CLOSED)) {
+                /* 计算该连接下一次需要被 engine 唤醒的时间点 */
                 conn->next_tick_time = xqc_conn_next_wakeup_time(conn);
                 if (XQC_LIKELY(conn->next_tick_time != 0)) {
+                    /* 本轮处理完成，清除 ticking 标记并重新放回等待唤醒队列 */
                     conn->conn_flag &= ~XQC_CONN_FLAG_TICKING;
                     xqc_engine_add_wakeup_queue(engine, conn);
                     continue;
@@ -994,7 +1007,7 @@ xqc_engine_main_logic(xqc_engine_t *engine)
             }
         }
 
-        /* conn should be destroyed ( closed or next_tick_time = 0) */
+        /* 走到这里说明连接应被销毁：要么已关闭，要么后续无须再次调度 */
         conn->conn_flag &= ~XQC_CONN_FLAG_TICKING;
         if (!(engine->eng_flag & XQC_ENG_FLAG_NO_DESTROY)) {
             xqc_log(engine->log, XQC_LOG_INFO, "|conn:%p|%s|"
@@ -1004,21 +1017,25 @@ xqc_engine_main_logic(xqc_engine_t *engine)
             xqc_conn_destroy(conn);
 
         } else {
+            /* 特殊模式下暂不销毁，而是保留连接并重新加入等待队列 */
             conn->next_tick_time = 0;
             xqc_engine_add_wakeup_queue(engine, conn);
         }
     }
 
+    /* 计算整个 engine 下一次最早的唤醒时间，并交给外部事件系统设置定时器 */
     xqc_usec_t wake_after = xqc_engine_wakeup_after(engine);
     if (wake_after > 0) {
         engine->eng_callback.set_event_timer(wake_after, engine->user_data);
     }
 
+    /* 本轮调度结束，清除运行标记 */
     engine->eng_flag &= ~XQC_ENG_FLAG_RUNNING;
 
     xqc_log(engine->log, XQC_LOG_DEBUG, "|END|now:%ui|", now);
     return;
 }
+
 
 
 xqc_int_t

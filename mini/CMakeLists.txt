@@ -5,7 +5,7 @@ set(
     "../demo/xqc_hq_conn.c"
     "../demo/xqc_hq_request.c"
 )
-
+# ${xxx}这个语法，很像脚本里的“字符串替换”
 set(
     MINI_CLIENT_SOURCES
     ${HQ_SOURCES}

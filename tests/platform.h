@@ -4,7 +4,7 @@
 
 #ifndef PLATFORM_H
 #define PLATFORM_H
-
+//defined 是预处理器里的操作符，用来判断某个宏是否已定义。
 #if defined(_WIN64) || defined(WIN64) || defined(_WIN32) || defined(WIN32)
 #define XQC_SYS_WINDOWS
 #endif

@@ -33,20 +33,31 @@ xqc_mini_svr_init_args(xqc_mini_svr_args_t *args)
      * init quic config
      * it's recommended to replace the constant value with option arguments according to actual needs
      */
-    p = args->quic_cfg.session_ticket_key_data;
+    p = args->quic_cfg.session_ticket_key_data;//拿到存放会话票据密钥的缓冲区指针。
+    //读入最多 SESSION_TICKET_KEY_BUF_LEN 字节的票据密钥数据到缓冲区。
     ret = xqc_mini_read_file_data(p,
         SESSION_TICKET_KEY_BUF_LEN, SESSION_TICKET_KEY_FILE);
+    //记录实际读取长度，失败则置 0；长度>0 即表示启用 0-RTT 票据。
     args->quic_cfg.session_ticket_key_len = ret > 0 ? ret : 0;
+    //默认拥塞控制算法设为 BBR。
     args->quic_cfg.cc = CC_TYPE_BBR;
+    //默认开启 multipath。
     args->quic_cfg.multipath = 1;
+    //多路径调度器设为 “minrtt”。
     strncpy(args->quic_cfg.mp_sched, "minrtt", 32);
+    //填入默认 TLS cipher 列表。
     strncpy(args->quic_cfg.ciphers, XQC_TLS_CIPHERS, CIPHER_SUIT_LEN - 1);
+    //填入默认椭圆曲线组列表。
     strncpy(args->quic_cfg.groups, XQC_TLS_GROUPS, TLS_GROUPS_LEN - 1);
 
     /* init env config */
+    //设置日志输出文件路径。
     strncpy(args->env_cfg.log_path, LOG_PATH, TLS_GROUPS_LEN - 1);
+    //设置 keylog 输出文件路径（用于抓包解密）。
     strncpy(args->env_cfg.key_out_path, KEY_PATH, PATH_LEN - 1);
+    //设置服务器私钥文件路径。
     strncpy(args->env_cfg.private_key_file, PRIV_KEY_PATH, PATH_LEN - 1);
+    //设置服务器证书文件路径。
     strncpy(args->env_cfg.cert_file, CERT_PEM_PATH, PATH_LEN - 1);
 }
 
@@ -496,14 +507,18 @@ main(int argc, char *argv[])
     xqc_mini_svr_ctx_t svr_ctx = {0}, *ctx = &svr_ctx;
     xqc_mini_svr_args_t *args = NULL;
     xqc_mini_svr_user_conn_t *user_conn = NULL;
-
+    //calloc核心特点：会把申请到的内存中的数据自动清零
     args = calloc(1, sizeof(xqc_mini_svr_args_t));
     if (args == NULL) {
         printf("[error] calloc args failed\n");
         goto exit;
     }
 
-    /* init env (for windows) */
+    /* init env (for windows) 
+    xqc_platform_init_env 负责做平台级初始化：在 Windows 上调用 WSAStartup 初始化 Winsock（失败就打印错误并 exit(1)），
+    在非 Windows 平台则是空操作。
+    这样后续的 socket 调用在 Windows 环境下能正常工作。
+    */
     xqc_platform_init_env();
 
     /* init server environment */

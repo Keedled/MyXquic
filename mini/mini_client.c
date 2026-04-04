@@ -364,6 +364,7 @@ xqc_mini_cli_request_send(xqc_h3_request_t *h3_request, xqc_mini_cli_user_stream
     req_cfg = &user_stream->user_conn->ctx->args->req_cfg;
 
     fin = 1;
+    //利用从上面req_cfg得到的请求头，构建HTTP/3头部
     ret = xqc_mini_cli_format_h3_req(header, req_cfg);
     if (ret > 0) {
         user_stream->h3_hdrs.headers = header;
