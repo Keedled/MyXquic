@@ -223,10 +223,7 @@ chunk_server_cleanup(chunk_server_ctx *ctx)
         ctx->listen_fd = -1;
     }
 
-    if (ctx->assembly.bitmap != NULL) {
-        free(ctx->assembly.bitmap);
-        ctx->assembly.bitmap = NULL;
-    }
+    chunk_assembly_reset(&ctx->assembly);
 
     if (ctx->assembly.fd >= 0) {
         close(ctx->assembly.fd);

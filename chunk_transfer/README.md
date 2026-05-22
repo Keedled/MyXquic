@@ -56,4 +56,4 @@ By default it:
 
 - Client disables certificate verification by default so the example can work with the repository's sample server certificate.
 - `-t` is interpreted as seconds on both client and server.
-- The server keeps assembling a single target file per process lifetime, matching the v1 assumptions in `PLAN.md`.
+- The server assembles one file at a time. After a file completes, a later transfer with a new file ID resets the assembly state and overwrites the configured output path.

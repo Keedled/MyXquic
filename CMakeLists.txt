@@ -107,6 +107,9 @@ endif()
 
 if(NOT (CMAKE_C_COMPILER_ID MATCHES "MSVC" OR CMAKE_CXX_COMPILER_ID MATCHES "MSVC"))
     set(CMAKE_C_FLAGS_OPTION "-Werror -Wno-unused -Wno-pointer-sign -Wno-format-security ")
+    if(CMAKE_C_COMPILER_ID STREQUAL "GNU" AND CMAKE_C_COMPILER_VERSION VERSION_GREATER_EQUAL 13)
+        set(CMAKE_C_FLAGS_OPTION "${CMAKE_C_FLAGS_OPTION} -Wno-error=dangling-pointer ")
+    endif()
 endif()
 
 # C_FLAGS
@@ -176,6 +179,7 @@ if(XQC_ENABLE_TESTING)
     add_subdirectory(demo)
     add_subdirectory(mini)
     add_subdirectory(chunk_transfer)
+    add_subdirectory(h3_chunk_transfer)
 endif(XQC_ENABLE_TESTING)
 
 

@@ -101,8 +101,9 @@ typedef struct chunk_task_s {
     uint32_t chunk_id;
     uint32_t chunk_count;
     uint64_t offset;
-    uint32_t chunk_len;
-    uint32_t attempts;
+    uint32_t chunk_len;//这个分片的长度（字节）；最后一片通常小于 chunk_size。
+    uint32_t attempts; //每次把该 chunk_task 派给 worker 前，会先 task->attempts++。
+                       //发送失败后，代码会判断：attempts <= max_retries 就重入队重试；否则判定“重试耗尽”。
 } chunk_task;
 
 typedef struct chunk_result_s {
@@ -121,8 +122,9 @@ typedef struct chunk_server_ctx_s chunk_server_ctx;
 typedef struct server_conn_ctx_s server_conn_ctx;
 typedef struct server_stream_ctx_s server_stream_ctx;
 
+//chunk_stream_ctx_s 专门管理“这条流上一个 chunk 的收发进度”。
 struct chunk_stream_ctx_s {
-    chunk_worker_ctx *worker;
+    chunk_worker_ctx *worker;//某个 worker 线程的一次执行上下文，包含这次分片发送所需的全部状态。
     xqc_stream_t *stream;
     uint8_t header_buf[CHUNK_HEADER_V1_LEN];
     size_t header_len;
@@ -224,6 +226,7 @@ int chunk_fsync_file(int fd);
 size_t chunk_bitmap_bytes(uint32_t bit_count);
 int chunk_bitmap_get(const uint8_t *bitmap, uint32_t bit_index);
 void chunk_bitmap_set(uint8_t *bitmap, uint32_t bit_index);
+void chunk_assembly_reset(file_assembly_ctx *assembly);
 void chunk_result_set(chunk_result *result, int success, int error_code, uint16_t ack_status,
     const char *fmt, ...);
 void chunk_mark_worker_finished(chunk_worker_ctx *worker);

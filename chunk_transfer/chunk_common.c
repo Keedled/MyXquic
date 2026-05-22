@@ -99,9 +99,11 @@ chunk_socket_set_nonblocking(int fd)
 int
 chunk_socket_set_buffers(int fd, int size)
 {
+    //设置接收缓冲区大小
     if (setsockopt(fd, SOL_SOCKET, SO_RCVBUF, (const char *)&size, sizeof(size)) != 0) {
         return -1;
     }
+    //设置发送缓冲区大小
     if (setsockopt(fd, SOL_SOCKET, SO_SNDBUF, (const char *)&size, sizeof(size)) != 0) {
         return -1;
     }
@@ -115,7 +117,10 @@ chunk_create_udp_socket(const struct sockaddr *bind_addr, socklen_t bind_addrlen
     int fd;
     int opt = 1;
     int family;
-
+    //sa_family 是 struct sockaddr 里的字段，表示地址类型。
+    //常见值：
+    //AF_INET：IPv4
+    //AF_INET6：IPv6
     family = bind_addr != NULL ? bind_addr->sa_family : peer_addr->sa_family;
     fd = socket(family, SOCK_DGRAM, 0);
     if (fd < 0) {
@@ -126,14 +131,14 @@ chunk_create_udp_socket(const struct sockaddr *bind_addr, socklen_t bind_addrlen
         close(fd);
         return -1;
     }
-
+    //SO_REUSEADDR允许更快复用本地地址/端口（常见于服务重启时避免“地址已在使用”）。
     if (reuse_addr) {
         if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (const char *)&opt, sizeof(opt)) != 0) {
             close(fd);
             return -1;
         }
     }
-
+    //给socket设置缓冲区大小
     if (chunk_socket_set_buffers(fd, CHUNK_SOCKET_BUF_SIZE) != 0) {
         close(fd);
         return -1;
@@ -145,7 +150,7 @@ chunk_create_udp_socket(const struct sockaddr *bind_addr, socklen_t bind_addrlen
         setsockopt(fd, IPPROTO_IP, IP_MTU_DISCOVER, &val, sizeof(val));
     }
 #endif
-
+    
     if (bind_addr != NULL && bind(fd, bind_addr, bind_addrlen) != 0) {
         close(fd);
         return -1;
@@ -327,6 +332,21 @@ chunk_bitmap_set(uint8_t *bitmap, uint32_t bit_index)
     }
 
     bitmap[bit_index / 8U] |= (uint8_t)(1U << (bit_index % 8U));
+}
+
+void
+chunk_assembly_reset(file_assembly_ctx *assembly)
+{
+    int fd;
+
+    if (assembly == NULL) {
+        return;
+    }
+
+    fd = assembly->fd;
+    free(assembly->bitmap);
+    memset(assembly, 0, sizeof(*assembly));
+    assembly->fd = fd;
 }
 
 void

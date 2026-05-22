@@ -1,10 +1,10 @@
-#include "chunk_common.h"
+#include "h3_chunk_common.h"
 
 static void
-chunk_client_socket_read_handler(chunk_worker_ctx *worker, int fd)
+h3_chunk_client_socket_read_handler(h3_chunk_client_worker_ctx *worker, int fd)
 {
     ssize_t recv_size;
-    uint8_t packet_buf[CHUNK_PACKET_BUF_LEN];
+    uint8_t packet_buf[H3_CHUNK_PACKET_BUF_LEN];
     struct sockaddr_storage peer_addr;
     socklen_t peer_addrlen;
     xqc_int_t rc;
@@ -18,8 +18,6 @@ chunk_client_socket_read_handler(chunk_worker_ctx *worker, int fd)
         peer_addrlen = sizeof(peer_addr);
         recv_size = recvfrom(fd, (char *)packet_buf, sizeof(packet_buf), 0,
             (struct sockaddr *)&peer_addr, &peer_addrlen);
-        //get_sys_errno() 得到的是：最近一次系统调用失败的错误码
-        //如果等于 EAGAIN，表示非阻塞 socket 当前“暂时没数据可读”，不是致命错误。
         if (recv_size < 0 && get_sys_errno() == EAGAIN) {
             break;
         }
@@ -52,19 +50,19 @@ chunk_client_socket_read_handler(chunk_worker_ctx *worker, int fd)
 }
 
 static void
-chunk_client_socket_event_callback(int fd, short what, void *arg)
+h3_chunk_client_socket_event_callback(int fd, short what, void *arg)
 {
-    chunk_worker_ctx *worker = (chunk_worker_ctx *)arg;
+    h3_chunk_client_worker_ctx *worker = (h3_chunk_client_worker_ctx *)arg;
 
     if (what & EV_READ) {
-        chunk_client_socket_read_handler(worker, fd);
+        h3_chunk_client_socket_read_handler(worker, fd);
     }
 }
 
 static void
-chunk_client_timeout_callback(int fd, short what, void *arg)
+h3_chunk_client_timeout_callback(int fd, short what, void *arg)
 {
-    chunk_worker_ctx *worker = (chunk_worker_ctx *)arg;
+    h3_chunk_client_worker_ctx *worker = (h3_chunk_client_worker_ctx *)arg;
     (void)fd;
     (void)what;
 
@@ -78,7 +76,7 @@ chunk_client_timeout_callback(int fd, short what, void *arg)
 
     if (!worker->close_requested && worker->engine != NULL && worker->cid.cid_len > 0) {
         worker->close_requested = 1;
-        xqc_conn_close(worker->engine, &worker->cid);
+        xqc_h3_conn_close(worker->engine, &worker->cid);
         xqc_engine_main_logic(worker->engine);
     } else if (worker->eb != NULL) {
         event_base_loopbreak(worker->eb);
@@ -86,26 +84,24 @@ chunk_client_timeout_callback(int fd, short what, void *arg)
 }
 
 static int
-chunk_client_prepare_stream(chunk_worker_ctx *worker)
+h3_chunk_client_prepare_request(h3_chunk_client_worker_ctx *worker)
 {
-    chunk_header_v1 header;
-    chunk_stream_ctx *stream_ctx;
+    h3_chunk_client_request_ctx *request_ctx;
 
-    stream_ctx = &worker->stream_ctx;
-    memset(stream_ctx, 0, sizeof(*stream_ctx));
-    stream_ctx->worker = worker;
-    stream_ctx->header_len = CHUNK_HEADER_V1_LEN;
+    request_ctx = &worker->request_ctx;
+    memset(request_ctx, 0, sizeof(*request_ctx));
+    request_ctx->worker = worker;
 
     if (worker->task->chunk_len > 0) {
-        stream_ctx->body_buf = (uint8_t *)malloc(worker->task->chunk_len);
-        if (stream_ctx->body_buf == NULL) {
+        request_ctx->body_buf = (uint8_t *)malloc(worker->task->chunk_len);
+        if (request_ctx->body_buf == NULL) {
             chunk_result_set(&worker->result, 0, CHUNK_ERR_IO, 0,
                 "failed to allocate chunk buffer");
             return -1;
         }
 
         if (chunk_read_chunk_file(worker->config.input_path, worker->task->offset,
-                stream_ctx->body_buf, worker->task->chunk_len) != 0)
+                request_ctx->body_buf, worker->task->chunk_len) != 0)
         {
             chunk_result_set(&worker->result, 0, CHUNK_ERR_IO, 0,
                 "failed to read input file");
@@ -113,53 +109,47 @@ chunk_client_prepare_stream(chunk_worker_ctx *worker)
         }
     }
 
-    stream_ctx->body_len = worker->task->chunk_len;
-
-    memset(&header, 0, sizeof(header));
-    header.magic = CHUNK_PROTOCOL_MAGIC;
-    header.version = CHUNK_PROTOCOL_VERSION;
-    header.header_len = CHUNK_HEADER_V1_LEN;
-    header.file_id = worker->file_id;
-    header.file_size = worker->file_size;
-    header.chunk_id = worker->task->chunk_id;
-    header.chunk_count = worker->task->chunk_count;
-    header.offset = worker->task->offset;
-    header.chunk_len = worker->task->chunk_len;
-    header.crc32 = chunk_crc32_buffer(stream_ctx->body_buf, stream_ctx->body_len);
-
-    if (chunk_header_encode(&header, stream_ctx->header_buf, sizeof(stream_ctx->header_buf)) < 0) {
-        chunk_result_set(&worker->result, 0, CHUNK_ERR_PROTOCOL, 0,
-            "failed to encode chunk header");
-        return -1;
-    }
-
-    worker->result.ack_crc32 = header.crc32;
+    request_ctx->body_len = worker->task->chunk_len;
+    worker->result.ack_crc32 = chunk_crc32_buffer(request_ctx->body_buf, request_ctx->body_len);
     return 0;
 }
 
 static int
-chunk_client_init_engine(chunk_worker_ctx *worker)
+h3_chunk_client_init_engine(h3_chunk_client_worker_ctx *worker)
 {
     xqc_config_t config;
     xqc_engine_callback_t callbacks = {
-        .set_event_timer = chunk_client_set_event_timer,
+        .set_event_timer = h3_chunk_client_set_event_timer,
         .log_callbacks = {
-            .xqc_log_write_err = chunk_client_write_log,
-            .xqc_log_write_stat = chunk_client_write_log,
-            .xqc_qlog_event_write = chunk_client_write_qlog,
+            .xqc_log_write_err = h3_chunk_client_write_log,
+            .xqc_log_write_stat = h3_chunk_client_write_log,
+            .xqc_qlog_event_write = h3_chunk_client_write_qlog,
         },
-        .keylog_cb = chunk_client_keylog_cb,
+        .keylog_cb = h3_chunk_client_keylog_cb,
     };
     xqc_transport_callbacks_t transport_cbs = {
-        .write_socket = chunk_client_write_socket,
-        .write_socket_ex = chunk_client_write_socket_ex,
-        .save_token = chunk_client_save_token,
-        .save_session_cb = chunk_client_save_session,
-        .save_tp_cb = chunk_client_save_tp,
+        .write_socket = h3_chunk_client_write_socket,
+        .write_socket_ex = h3_chunk_client_write_socket_ex,
+        .save_token = h3_chunk_client_save_token,
+        .save_session_cb = h3_chunk_client_save_session,
+        .save_tp_cb = h3_chunk_client_save_tp,
     };
     xqc_engine_ssl_config_t ssl_cfg = {
         .ciphers = XQC_TLS_CIPHERS,
         .groups = XQC_TLS_GROUPS,
+    };
+    xqc_h3_callbacks_t h3_cbs = {
+        .h3c_cbs = {
+            .h3_conn_create_notify = h3_chunk_client_h3_conn_create_notify,
+            .h3_conn_close_notify = h3_chunk_client_h3_conn_close_notify,
+            .h3_conn_handshake_finished = h3_chunk_client_h3_conn_handshake_finished,
+        },
+        .h3r_cbs = {
+            .h3_request_close_notify = h3_chunk_client_request_close_notify,
+            .h3_request_read_notify = h3_chunk_client_request_read_notify,
+            .h3_request_write_notify = h3_chunk_client_request_write_notify,
+            .h3_request_closing_notify = h3_chunk_client_request_closing_notify,
+        },
     };
 
     if (xqc_engine_get_default_config(&config, XQC_ENGINE_CLIENT) < 0) {
@@ -178,16 +168,16 @@ chunk_client_init_engine(chunk_worker_ctx *worker)
         return -1;
     }
 
-    worker->ev_engine = event_new(worker->eb, -1, 0, chunk_client_engine_cb, worker);
+    worker->ev_engine = event_new(worker->eb, -1, 0, h3_chunk_client_engine_cb, worker);
     if (worker->ev_engine == NULL) {
         chunk_result_set(&worker->result, 0, CHUNK_ERR_ENGINE, 0,
             "failed to create engine timer event");
         return -1;
     }
 
-    if (chunk_client_register_alpn(worker->engine) != XQC_OK) {
+    if (xqc_h3_ctx_init(worker->engine, &h3_cbs) != XQC_OK) {
         chunk_result_set(&worker->result, 0, CHUNK_ERR_ENGINE, 0,
-            "failed to register chunk-transfer alpn");
+            "xqc_h3_ctx_init failed");
         return -1;
     }
 
@@ -195,7 +185,7 @@ chunk_client_init_engine(chunk_worker_ctx *worker)
 }
 
 static int
-chunk_client_init_connection(chunk_worker_ctx *worker)
+h3_chunk_client_init_connection(h3_chunk_client_worker_ctx *worker)
 {
     const xqc_cid_t *cid;
     xqc_conn_settings_t conn_settings;
@@ -205,13 +195,8 @@ chunk_client_init_connection(chunk_worker_ctx *worker)
     conn_settings.cong_ctrl_callback = xqc_bbr_cb;
     conn_settings.cc_params.customize_on = 1;
     conn_settings.cc_params.init_cwnd = 32;
-    conn_settings.so_sndbuf = CHUNK_SOCKET_BUF_SIZE;
+    conn_settings.so_sndbuf = H3_CHUNK_SOCKET_BUF_SIZE;
     conn_settings.proto_version = XQC_VERSION_V1;
-    /*
-     * 连接空闲超时，单位毫秒。xquic 把这两个字段区分成：
-     * 握手完成前用 init_idle_time_out
-     * 握手完成后用 idle_time_out    
-    */
     conn_settings.init_idle_time_out = worker->config.timeout_sec * 1000U;
     conn_settings.idle_time_out = worker->config.timeout_sec * 1000U;
     conn_settings.spurious_loss_detect_on = 1;
@@ -222,25 +207,24 @@ chunk_client_init_connection(chunk_worker_ctx *worker)
 
     memset(&conn_ssl_config, 0, sizeof(conn_ssl_config));
 
-    cid = xqc_connect(worker->engine, &conn_settings, NULL, 0, worker->config.server_host, 0,
-        &conn_ssl_config, (struct sockaddr *)&worker->peer_addr, worker->peer_addrlen,
-        CHUNK_ALPN, worker);
+    cid = xqc_h3_connect(worker->engine, &conn_settings, NULL, 0, worker->config.server_host, 0,
+        &conn_ssl_config, (struct sockaddr *)&worker->peer_addr, worker->peer_addrlen, worker);
     if (cid == NULL) {
         chunk_result_set(&worker->result, 0, CHUNK_ERR_CONNECT, 0,
-            "xqc_connect failed");
+            "xqc_h3_connect failed");
         return -1;
     }
 
     memcpy(&worker->cid, cid, sizeof(*cid));
-    worker->stream_ctx.stream = xqc_stream_create(worker->engine, &worker->cid, NULL,
-        &worker->stream_ctx);
-    if (worker->stream_ctx.stream == NULL) {
+    worker->request_ctx.request = xqc_h3_request_create(worker->engine, &worker->cid, NULL,
+        &worker->request_ctx);
+    if (worker->request_ctx.request == NULL) {
         chunk_result_set(&worker->result, 0, CHUNK_ERR_STREAM, 0,
-            "xqc_stream_create failed");
+            "xqc_h3_request_create failed");
         return -1;
     }
 
-    if (chunk_client_stream_send(worker->stream_ctx.stream, &worker->stream_ctx) != 0) {
+    if (h3_chunk_client_request_send(worker->request_ctx.request, &worker->request_ctx) != 0) {
         return -1;
     }
 
@@ -249,7 +233,7 @@ chunk_client_init_connection(chunk_worker_ctx *worker)
 }
 
 static void
-chunk_client_cleanup(chunk_worker_ctx *worker)
+h3_chunk_client_cleanup(h3_chunk_client_worker_ctx *worker)
 {
     if (worker->ev_socket != NULL) {
         event_del(worker->ev_socket);
@@ -269,6 +253,7 @@ chunk_client_cleanup(chunk_worker_ctx *worker)
     }
 
     if (worker->engine != NULL) {
+        xqc_h3_ctx_destroy(worker->engine);
         xqc_engine_destroy(worker->engine);
         worker->engine = NULL;
     }
@@ -278,9 +263,9 @@ chunk_client_cleanup(chunk_worker_ctx *worker)
         worker->fd = -1;
     }
 
-    if (worker->stream_ctx.body_buf != NULL) {
-        free(worker->stream_ctx.body_buf);
-        worker->stream_ctx.body_buf = NULL;
+    if (worker->request_ctx.body_buf != NULL) {
+        free(worker->request_ctx.body_buf);
+        worker->request_ctx.body_buf = NULL;
     }
 
     if (worker->eb != NULL) {
@@ -290,9 +275,9 @@ chunk_client_cleanup(chunk_worker_ctx *worker)
 }
 
 int
-chunk_client_run_worker(chunk_worker_ctx *worker)
+h3_chunk_client_run_worker(h3_chunk_client_worker_ctx *worker)
 {
-    struct timeval tv;//一个时间结构体，分成“秒 + 微秒”两部分。
+    struct timeval tv;
 
     if (worker == NULL) {
         return -1;
@@ -329,7 +314,7 @@ chunk_client_run_worker(chunk_worker_ctx *worker)
     }
 
     worker->ev_socket = event_new(worker->eb, worker->fd, EV_READ | EV_PERSIST,
-        chunk_client_socket_event_callback, worker);
+        h3_chunk_client_socket_event_callback, worker);
     if (worker->ev_socket == NULL) {
         chunk_result_set(&worker->result, 0, CHUNK_ERR_SOCKET, 0,
             "failed to create socket event");
@@ -337,7 +322,7 @@ chunk_client_run_worker(chunk_worker_ctx *worker)
     }
     event_add(worker->ev_socket, NULL);
 
-    worker->ev_timeout = event_new(worker->eb, -1, 0, chunk_client_timeout_callback, worker);
+    worker->ev_timeout = event_new(worker->eb, -1, 0, h3_chunk_client_timeout_callback, worker);
     if (worker->ev_timeout == NULL) {
         chunk_result_set(&worker->result, 0, CHUNK_ERR_TIMEOUT, 0,
             "failed to create timeout event");
@@ -347,15 +332,13 @@ chunk_client_run_worker(chunk_worker_ctx *worker)
     tv.tv_usec = 0;
     event_add(worker->ev_timeout, &tv);
 
-    if (chunk_client_prepare_stream(worker) != 0) {
+    if (h3_chunk_client_prepare_request(worker) != 0) {
         goto finish;
     }
-
-    if (chunk_client_init_engine(worker) != 0) {
+    if (h3_chunk_client_init_engine(worker) != 0) {
         goto finish;
     }
-
-    if (chunk_client_init_connection(worker) != 0) {
+    if (h3_chunk_client_init_connection(worker) != 0) {
         goto finish;
     }
 
@@ -366,14 +349,14 @@ finish:
         chunk_result_set(&worker->result, 0, CHUNK_ERR_SERVER, 0,
             "worker exited without a result");
     }
-    chunk_client_cleanup(worker);
-    chunk_mark_worker_finished(worker);
+    h3_chunk_client_cleanup(worker);
+    h3_chunk_mark_worker_finished(worker);
     return worker->result.success ? 0 : -1;
 }
 
 void *
-chunk_client_worker_thread_main(void *arg)
+h3_chunk_client_worker_thread_main(void *arg)
 {
-    chunk_client_run_worker((chunk_worker_ctx *)arg);
+    h3_chunk_client_run_worker((h3_chunk_client_worker_ctx *)arg);
     return NULL;
 }

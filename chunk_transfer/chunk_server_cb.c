@@ -74,6 +74,17 @@ chunk_server_validate_header(server_stream_ctx *stream_ctx)
     }
 
     assembly = &stream_ctx->conn_ctx->server->assembly;
+    if (assembly->initialized
+        && assembly->completed
+        && assembly->file_id != stream_ctx->header.file_id)
+    {
+        chunk_log_print(stream_ctx->conn_ctx->server->config.log_level, CHUNK_LOG_INFO,
+            "chunk_server", "starting new file assembly file_id=%" PRIu64
+            " previous_file_id=%" PRIu64,
+            stream_ctx->header.file_id, assembly->file_id);
+        chunk_assembly_reset(assembly);
+    }
+
     if (!assembly->initialized) {
         assembly->file_id = stream_ctx->header.file_id;
         assembly->file_size = stream_ctx->header.file_size;
@@ -84,6 +95,7 @@ chunk_server_validate_header(server_stream_ctx *stream_ctx)
             return CHUNK_STATUS_INTERNAL;
         }
         if (chunk_resize_file(assembly->fd, assembly->file_size) != 0) {
+            chunk_assembly_reset(assembly);
             return CHUNK_STATUS_IO_ERROR;
         }
         assembly->initialized = 1;
